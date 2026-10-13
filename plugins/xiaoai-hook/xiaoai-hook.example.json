@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "piwebOnly": true,
+  "url": "http://127.0.0.1:28765/hooks/task-completed",
+  "source": "PiWeb",
+  "token": "换成你的令牌"
+}
