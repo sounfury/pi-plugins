@@ -20,18 +20,38 @@ function overlay() {
     'align-items:center;justify-content:center;background:color-mix(in srgb,var(--bg,#111) 88%,transparent);' +
     'color:var(--text,#eee);font:15px/1.6 system-ui,sans-serif;text-align:center;padding:24px;';
   const text = document.createElement('div');
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.hidden = true;
-  button.style.cssText = 'border:1px solid var(--border,#555);border-radius:7px;background:var(--bg-elev,#222);' +
-    'color:var(--accent,#9bf);padding:8px 14px;font:inherit;cursor:pointer;';
-  el.append(text, button);
+  text.style.cssText = 'max-width:420px;white-space:pre-line;';
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;';
+  el.append(text, actions);
   document.body.appendChild(el);
-  return {
-    say(message) { text.textContent = message; },
-    offer(label, onClick) { button.textContent = label; button.hidden = false; button.onclick = onClick; },
+  const button = (label, primary, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.cssText = 'border:1px solid var(--border,#555);border-radius:7px;background:var(--bg-elev,#222);' +
+      `color:var(${primary ? '--accent,#9bf' : '--text,#eee'});padding:8px 16px;font:inherit;cursor:pointer;`;
+    b.onclick = onClick;
+    actions.appendChild(b);
+    return b;
+  };
+  const ui = {
+    say(message) { text.textContent = message; actions.replaceChildren(); },
+    offer(label, onClick) { button(label, true, onClick); },
+    // 自己画确认框：宿主的 dialogs.confirm 是输入框旁的内嵌条，不在对话视图时根本看不到。
+    ask(message, yes, no) {
+      ui.say(message);
+      return new Promise(resolve => {
+        const done = value => { document.removeEventListener('keydown', onKey, true); resolve(value); };
+        const onKey = event => { if (event.key === 'Escape') { event.stopPropagation(); done(false); } };
+        document.addEventListener('keydown', onKey, true);
+        button(no, false, () => done(false));
+        button(yes, true, () => done(true)).focus();
+      });
+    },
     close() { el.remove(); },
   };
+  return ui;
 }
 
 let busy = false;
@@ -40,15 +60,14 @@ async function restart() {
   busy = true;
   let ui;
   try {
-    const before = await call('status');
-    const bridge = window.__piWebUiHost;
-    const title = t('重启 pi-web-ui 服务？', 'Restart the pi-web-ui service?');
-    const detail = t('进行中的对话会被打断，服务恢复后自动续跑；页面会自动刷新。',
-      'Running conversations are interrupted and resume once the service is back; this page reloads itself.');
-    const ok = bridge?.dialogs?.confirm ? await bridge.dialogs.confirm({ title, detail }) : window.confirm(`${title}\n\n${detail}`);
-    if (!ok) return;
     ui = overlay();
+    const ok = await ui.ask(
+      t('重启 pi-web-ui 服务？\n进行中的对话会被打断，服务恢复后自动续跑；页面会自动刷新。',
+        'Restart the pi-web-ui service?\nRunning conversations are interrupted and resume once the service is back; this page reloads itself.'),
+      t('重启', 'Restart'), t('取消', 'Cancel'));
+    if (!ok) { ui.close(); return; }
     ui.say(t('正在重启 pi…', 'Restarting pi…'));
+    const before = await call('status');
     await call('restart', { method: 'POST', headers: { 'x-pi-restart': '1' } });
     const deadline = Date.now() + TIMEOUT_MS;
     while (Date.now() < deadline) {
