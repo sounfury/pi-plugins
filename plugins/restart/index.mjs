@@ -15,11 +15,6 @@ export function createRestart(host, options = {}) {
   let pending = false;
   const status = () => ({ bootId, supervised: isSupervised(env), restarting: pending });
 
-  host.ui.register({
-    slot: 'topbar.primary', id: 'restart', kind: 'action', action: 'restart',
-    icon: '⟳', label: '重启', labelEn: 'Restart',
-    hint: '重启 pi-web-ui 服务，恢复后自动刷新页面', hintEn: 'Restart the pi-web-ui service and reload this page',
-  });
   host.route('GET', '/status', (_req, res) => {
     res.set('Cache-Control', 'no-store').json(status());
   });

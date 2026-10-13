@@ -4,10 +4,8 @@ import { createRestart, isSupervised } from '../index.mjs';
 
 function setup(env) {
   const routes = new Map();
-  const ui = [];
   let exits = 0;
   const host = {
-    ui: { register: item => ui.push(item) },
     route: (method, path, handler) => routes.set(`${method} ${path}`, handler),
     effect: () => {},
   };
@@ -18,7 +16,7 @@ function setup(env) {
     await new Promise(resolve => setTimeout(resolve, 5));
     return res;
   };
-  return { ui, request, exits: () => exits };
+  return { request, exits: () => exits };
 }
 
 test('isSupervised', () => {
@@ -27,10 +25,8 @@ test('isSupervised', () => {
   assert.equal(isSupervised({ PI_WEB_LAUNCHED_BY: 'service' }), true);
 });
 
-test('registers a top bar action and reports status', async () => {
-  const { ui, request } = setup({ INVOCATION_ID: 'x' });
-  assert.equal(ui[0].slot, 'topbar.primary');
-  assert.equal(ui[0].action, 'restart');
+test('reports status', async () => {
+  const { request } = setup({ INVOCATION_ID: 'x' });
   assert.deepEqual((await request('GET /status')).body, { bootId: 'boot-1', supervised: true, restarting: false });
 });
 

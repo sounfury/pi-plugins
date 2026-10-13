@@ -1,29 +1,9 @@
 {
   "id": "restart",
   "name": "一键重启",
-  "version": "0.1.0",
-  "description": "顶栏一键重启 pi-web-ui 服务（连同其中的 pi 和扩展），服务恢复后自动重新打开页面。",
+  "version": "0.2.0",
+  "description": "一键重启 pi-web-ui 服务（连同其中的 pi 和扩展），服务恢复后自动重新打开页面。可在插件菜单里钉到顶栏。",
   "icon": "⟳",
   "apiVersion": 2,
-  "permissions": [
-    "http",
-    "ui"
-  ],
-  "view": false,
-  "preload": true,
-  "ui": {
-    "items": [
-      {
-        "slot": "topbar.primary",
-        "id": "restart",
-        "kind": "action",
-        "action": "restart",
-        "icon": "⟳",
-        "label": "重启",
-        "labelEn": "Restart",
-        "hint": "重启 pi-web-ui 服务，恢复后自动刷新页面",
-        "hintEn": "Restart the pi-web-ui service and reload this page"
-      }
-    ]
-  }
+  "permissions": ["http"]
 }

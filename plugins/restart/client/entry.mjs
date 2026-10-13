@@ -1,5 +1,6 @@
-// 无视图插件：manifest 的 preload 让这个 bundle 随页面常驻加载，只负责顶栏按钮的动作。
+// 这个插件的页面本身就是「重启」动作：从插件菜单或钉在顶栏的按钮打开它，就弹出重启确认。
 const API = new URL('../../../plugins-api/restart/', import.meta.url);
+const SELF = 'plugin:restart';
 const POLL_MS = 1000;
 const TIMEOUT_MS = 90_000;
 const en = () => !/^zh/i.test(document.documentElement.lang || navigator.language || 'zh');
@@ -11,6 +12,32 @@ async function call(path, init = {}) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return body;
+}
+
+// 记住打开本页之前所在的视图：取消或出错后回到那里，而不是停在这张空页上。
+let previousView = 'chat';
+(async () => {
+  for (let i = 0; i < 100; i++) {
+    const bridge = window.__piWebUiHost;
+    if (typeof bridge?.onViewChange === 'function') {
+      bridge.onViewChange(view => { if (view && view !== SELF) previousView = view; });
+      return;
+    }
+    await sleep(100);
+  }
+})();
+function leave() {
+  try { window.__piWebUiHost?.setView?.(previousView); } catch { /* 留在本页，页面上还有重启按钮 */ }
+}
+
+function makeButton(label, primary, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = label;
+  button.style.cssText = 'border:1px solid var(--border,#555);border-radius:7px;background:var(--bg-elev,#222);' +
+    `color:var(${primary ? '--accent,#9bf' : '--text,#eee'});padding:8px 16px;font:inherit;cursor:pointer;`;
+  button.onclick = onClick;
+  return button;
 }
 
 function overlay() {
@@ -25,28 +52,17 @@ function overlay() {
   actions.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;';
   el.append(text, actions);
   document.body.appendChild(el);
-  const button = (label, primary, onClick) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.style.cssText = 'border:1px solid var(--border,#555);border-radius:7px;background:var(--bg-elev,#222);' +
-      `color:var(${primary ? '--accent,#9bf' : '--text,#eee'});padding:8px 16px;font:inherit;cursor:pointer;`;
-    b.onclick = onClick;
-    actions.appendChild(b);
-    return b;
-  };
   const ui = {
     say(message) { text.textContent = message; actions.replaceChildren(); },
-    offer(label, onClick) { button(label, true, onClick); },
-    // 自己画确认框：宿主的 dialogs.confirm 是输入框旁的内嵌条，不在对话视图时根本看不到。
+    offer(label, onClick) { actions.appendChild(makeButton(label, true, onClick)); },
     ask(message, yes, no) {
       ui.say(message);
       return new Promise(resolve => {
         const done = value => { document.removeEventListener('keydown', onKey, true); resolve(value); };
         const onKey = event => { if (event.key === 'Escape') { event.stopPropagation(); done(false); } };
         document.addEventListener('keydown', onKey, true);
-        button(no, false, () => done(false));
-        button(yes, true, () => done(true)).focus();
+        actions.appendChild(makeButton(no, false, () => done(false)));
+        actions.appendChild(makeButton(yes, true, () => done(true))).focus();
       });
     },
     close() { el.remove(); },
@@ -58,14 +74,13 @@ let busy = false;
 async function restart() {
   if (busy) return;
   busy = true;
-  let ui;
+  const ui = overlay();
   try {
-    ui = overlay();
     const ok = await ui.ask(
       t('重启 pi-web-ui 服务？\n进行中的对话会被打断，服务恢复后自动续跑；页面会自动刷新。',
         'Restart the pi-web-ui service?\nRunning conversations are interrupted and resume once the service is back; this page reloads itself.'),
       t('重启', 'Restart'), t('取消', 'Cancel'));
-    if (!ok) { ui.close(); return; }
+    if (!ok) { ui.close(); leave(); return; }
     ui.say(t('正在重启 pi…', 'Restarting pi…'));
     const before = await call('status');
     await call('restart', { method: 'POST', headers: { 'x-pi-restart': '1' } });
@@ -84,22 +99,25 @@ async function restart() {
       'The service did not come back within 90s — check it on the server: systemctl status pi-web-ui'));
     ui.offer(t('刷新页面', 'Reload'), () => location.reload());
   } catch (error) {
-    const message = t('重启失败：', 'Restart failed: ') + (error?.message || error);
-    if (ui) { ui.say(message); ui.offer(t('关闭', 'Close'), () => ui.close()); }
-    else window.alert(message);
+    ui.say(t('重启失败：', 'Restart failed: ') + (error?.message || error));
+    ui.offer(t('关闭', 'Close'), () => { ui.close(); leave(); });
   } finally {
     busy = false;
   }
 }
 
-// 宿主桥可能晚于 bundle 就绪，等到了再注册。
-(async () => {
-  for (let i = 0; i < 100; i++) {
-    const bridge = window.__piWebUiHost;
-    if (typeof bridge?.onUiAction === 'function') { bridge.onUiAction('restart', () => { void restart(); }); return; }
-    await sleep(100);
-  }
-  console.error('[plugin:restart] 宿主桥未就绪，重启按钮不可用');
-})();
-
-export default {};
+export default {
+  mount(el) {
+    // 确认框被取消后若宿主没能切回原视图，这一页还留着一个按钮可以再点。
+    const page = document.createElement('div');
+    page.style.cssText = 'padding:24px;color:var(--text,#eee);font:14px/1.6 system-ui,sans-serif;';
+    const hint = document.createElement('p');
+    hint.style.cssText = 'margin:0 0 12px;color:var(--text-dim,#aaa);';
+    hint.textContent = t('重启 pi-web-ui 服务（连同其中的 pi 和扩展），恢复后页面自动刷新。',
+      'Restart the pi-web-ui service (pi and its extensions included); this page reloads once it is back.');
+    page.append(hint, makeButton(t('重启', 'Restart'), true, () => { void restart(); }));
+    el.replaceChildren(page);
+    void restart();
+    return () => page.remove();
+  },
+};
