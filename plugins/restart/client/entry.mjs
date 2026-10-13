@@ -1,4 +1,4 @@
-// 这个插件的页面本身就是「重启」动作：从插件菜单或钉在顶栏的按钮打开它，就弹出重启确认。
+// 这个插件的页面本身就是「重启」动作：从插件菜单或钉在顶栏的按钮切到它，就弹出重启确认。
 const API = new URL('../../../plugins-api/restart/', import.meta.url);
 const SELF = 'plugin:restart';
 const POLL_MS = 1000;
@@ -14,13 +14,19 @@ async function call(path, init = {}) {
   return body;
 }
 
-// 记住打开本页之前所在的视图：取消或出错后回到那里，而不是停在这张空页上。
+// 宿主在页面加载时就把所有插件页挂进隐藏面板，所以不能在 mount 里弹确认，
+// 只在视图真的切到本页时才弹。顺便记住之前所在的视图：取消或出错后回到那里。
 let previousView = 'chat';
 (async () => {
   for (let i = 0; i < 100; i++) {
     const bridge = window.__piWebUiHost;
     if (typeof bridge?.onViewChange === 'function') {
-      bridge.onViewChange(view => { if (view && view !== SELF) previousView = view; });
+      // 插件重载后旧模块的监听还挂着，先摘掉，免得弹两层。
+      try { window.__piRestartOffView?.(); } catch { /* 旧监听已失效 */ }
+      window.__piRestartOffView = bridge.onViewChange(view => {
+        if (view === SELF) void restart();
+        else if (view) previousView = view;
+      });
       return;
     }
     await sleep(100);
@@ -117,7 +123,6 @@ export default {
       'Restart the pi-web-ui service (pi and its extensions included); this page reloads once it is back.');
     page.append(hint, makeButton(t('重启', 'Restart'), true, () => { void restart(); }));
     el.replaceChildren(page);
-    void restart();
     return () => page.remove();
   },
 };

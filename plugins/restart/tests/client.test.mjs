@@ -22,7 +22,7 @@ globalThis.document = {
   body, documentElement: { lang: 'zh-CN' }, createElement: tag => new El(tag),
   addEventListener() {}, removeEventListener() {},
 };
-globalThis.window = { __piWebUiHost: { onViewChange: handler => viewHandlers.push(handler), setView: view => views.push(view) } };
+globalThis.window = { __piWebUiHost: { onViewChange: handler => { viewHandlers.push(handler); return () => {}; }, setView: view => views.push(view) } };
 globalThis.location = { reload: () => { reloads++; } };
 globalThis.fetch = async (url, init = {}) => {
   const request = { path: new URL(url).pathname, method: init.method || 'GET', headers: init.headers || {} };
@@ -37,21 +37,30 @@ const dialog = () => body.find(node => node.attrs.role === 'alertdialog');
 const button = label => dialog()?.find(node => node.tag === 'button' && node.textContent === label);
 const reset = () => { requests = []; views.length = 0; reloads = 0; };
 
-test('opening the page asks first; cancel returns to the previous view without restarting', async () => {
+const open = () => viewHandlers[0]('plugin:restart');
+
+test('mounting alone never asks: the host mounts every plugin page at load', async () => {
   reset();
   await tick(10);
   viewHandlers[0]('terminal');
-  viewHandlers[0]('plugin:restart');
   const page = new El('div');
   const unmount = view.mount(page);
+  await tick(10);
   assert.ok(page.find(node => node.tag === 'button' && node.textContent === '重启'), 'page keeps a restart button');
+  assert.equal(dialog(), undefined);
+  assert.equal(requests.length, 0);
+  unmount();
+});
+
+test('switching to the page asks; cancel returns to the previous view without restarting', async () => {
+  reset();
+  open();
   assert.ok(button('重启') && button('取消'), 'confirm overlay is shown');
   button('取消').onclick();
   await tick(10);
   assert.equal(dialog(), undefined);
   assert.deepEqual(views, ['terminal']);
   assert.equal(requests.length, 0);
-  unmount();
 });
 
 test('confirm restarts, waits for a new bootId, then reloads', async () => {
@@ -64,7 +73,7 @@ test('confirm restarts, waits for a new bootId, then reloads', async () => {
     if (statusCalls === 3) return { status: 502, body: {} };                // 服务还没回来
     return { status: 200, body: { bootId: 'new' } };
   };
-  view.mount(new El('div'));
+  open();
   button('重启').onclick();
   await tick(3500);
   const post = requests.find(request => request.method === 'POST');
@@ -75,13 +84,15 @@ test('confirm restarts, waits for a new bootId, then reloads', async () => {
   assert.equal(reloads, 1);
 });
 
-test('a refused restart is reported and closing returns to the previous view', async () => {
+test('the page button also asks; a refused restart is reported and closing returns to the previous view', async () => {
   reset();
   dialog()?.remove();
   respond = request => (request.method === 'POST'
     ? { status: 409, body: { error: '前台运行' } }
     : { status: 200, body: { bootId: 'old' } });
-  view.mount(new El('div'));
+  const page = new El('div');
+  view.mount(page);
+  page.find(node => node.tag === 'button').onclick();
   button('重启').onclick();
   await tick(20);
   assert.match(dialog().find(node => /重启失败/.test(node.textContent)).textContent, /前台运行/);
