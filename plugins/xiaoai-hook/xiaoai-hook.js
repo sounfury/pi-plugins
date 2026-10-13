@@ -63,6 +63,8 @@ export async function postNotification(config, payload, fetchImpl = fetch) {
       }
       throw new Error(`通知接口暂时不可用 (${response.status})`);
     } catch (error) {
+      // 隧道没连（对端没开机）时本地端口无人监听：属于正常离线，不重试。
+      if (error.cause?.code === "ECONNREFUSED") throw Object.assign(error, { offline: true });
       if (error.permanent || attempt === 2) throw error;
       await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
     }
@@ -121,6 +123,10 @@ export function attachNotifier(pi, options = {}) {
       await send(config, payload);
       debug("sent", { source });
     } catch (error) {
+      if (error.offline) {
+        debug("skip_offline");
+        return;
+      }
       debug("send_failed", { name: error.name });
       console.error("[xiaoai-hook] 完成通知发送失败，请检查接口、令牌和 SSH 隧道", error.name);
       try {
