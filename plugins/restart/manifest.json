@@ -5,7 +5,25 @@
   "description": "顶栏一键重启 pi-web-ui 服务（连同其中的 pi 和扩展），服务恢复后自动重新打开页面。",
   "icon": "⟳",
   "apiVersion": 2,
-  "permissions": ["http", "ui"],
+  "permissions": [
+    "http",
+    "ui"
+  ],
   "view": false,
-  "preload": true
+  "preload": true,
+  "ui": {
+    "items": [
+      {
+        "slot": "topbar.primary",
+        "id": "restart",
+        "kind": "action",
+        "action": "restart",
+        "icon": "⟳",
+        "label": "重启",
+        "labelEn": "Restart",
+        "hint": "重启 pi-web-ui 服务，恢复后自动刷新页面",
+        "hintEn": "Restart the pi-web-ui service and reload this page"
+      }
+    ]
+  }
 }
