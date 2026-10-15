@@ -28,7 +28,7 @@ chmod 600 ~/.pi/agent/xiaoai-hook.json
 
 - 只在任务正常完成时发送；出错或被中止的不发。
 - 子代理和临时会话不发，避免重复播报。
-- 请求体为 `{ source, event_id, task }`，`task` 是会话名，未命名时取首条用户消息。播报文案由 XiaoAiPlayer 的 `HOOK_TEXT` 决定。
+- 请求体为 `{ source, event_id, task }`，`task` 是会话名：优先读会话文件里最新的 `session_info`（PiWeb 重命名只写盘、不更新运行中的会话），最长 80 字；未命名时取首条用户消息前 30 字（与 PiWeb 左栏一致），会去掉注入的 `<skill>` 等标签块，系统提示词开头的则播报“当前对话”。播报文案由 XiaoAiPlayer 的 `HOOK_TEXT` 决定。
 - 请求超时 4 秒，遇到 5xx / 429 / 网络错误最多试 3 次。
 - 通知接口连接被拒绝（SSH 隧道没连、对端没开机）时视为离线：静默跳过，不重试也不弹警告，日志里记 `skip_offline`。
 - 调试日志写在 `~/.pi/agent/xiaoai-hook.log`。
