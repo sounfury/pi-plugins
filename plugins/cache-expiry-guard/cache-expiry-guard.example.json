@@ -4,7 +4,11 @@
   "cheapProvider": "magpie",
   "cheapModel": "antigravity/gemini-3.8-flash",
   "guards": [
-    { "pattern": "claude" },
-    { "pattern": "gpt-5", "idleMinutes": 30, "minContextTokens": 80000 }
+    {
+      "pattern": "claude"
+    },
+    {
+      "pattern": "codex/gpt-6-astra$"
+    }
   ]
 }
