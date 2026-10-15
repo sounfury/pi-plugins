@@ -1,24 +1,85 @@
 # pi-plugins
 
-自用的 pi / pi-web-ui 插件、扩展和主题。
+我自己用的 [pi](https://github.com/earendil-works/pi) / [pi-web-ui](https://github.com/xing-shuyin/pi-web-ui) 插件、扩展和主题。除了 `PUBLIC.md` 里列的公开包，这里的东西都是我自己写的。
 
 ```
 plugins/
-  vite-preview/   前端预览（pi-web-ui 插件，自写）
-  restart/        一键重启服务并自动刷新页面（pi-web-ui 插件，自写）
-  xiaoai-hook/    任务完成通知（pi 扩展，自写）
+  restart/             一键重启（pi-web-ui 插件）
+  vite-preview/        前端预览（pi-web-ui 插件）
+  xiaoai-hook/         任务完成后用小爱音箱播报（pi 扩展）
+  cache-expiry-guard/  Claude 缓存过期预警（pi 扩展）
 themes/
-  megumin.css     爆裂魔导 · 惠惠（pi-web-ui 主题，自定义）
-PUBLIC.md         在用的公开包 / 技能清单（只记名字）
+  megumin.css          爆裂魔导 · 惠惠（pi-web-ui 主题）
+PUBLIC.md              在用的公开包 / 技能清单（只记名字）
 ```
+
+两类插件的区别：
+
+- **pi-web-ui 插件**（带 `manifest.json`）只在 Web UI 里运行，可以有自己的页面、顶栏按钮和服务端路由。
+- **pi 扩展**（单个 `.js` / `.ts` 文件）由 pi 本身加载，在命令行 `pi` 和 pi-web-ui 里都生效。
+
+## 插件
+
+### 一键重启 · `plugins/restart`
+
+pi-web-ui 插件。点一下就重启 pi-web-ui 服务（里面的 pi 和扩展也一起重启），服务恢复后页面会自动刷新。
+
+- 入口在顶栏「插件」菜单，可以用图钉钉到顶栏。点了会先弹全屏确认，Esc 取消。
+- 只在由 supervisor 托管的实例上生效（`pi-web-ui server install` 装的 systemd / launchd 服务）。前台运行的实例会拒绝重启。
+- 走宿主自己的优雅关机，进行中的对话重启后会自动续跑。重启一次大约 6–10 秒，90 秒还没恢复就会提示。
+- 权限：`http`。没有配置项。
+
+详见 [plugins/restart/README.md](plugins/restart/README.md)。
+
+### 前端预览 · `plugins/vite-preview`
+
+pi-web-ui 插件。在 Web UI 自己的域名下（`/preview/`）预览 Vite / Astro 项目，不用新开端口、加域名或改反代。
+
+- 在插件页里填项目绝对路径就能启动预览，可以切桌面 / 手机宽度、看启动日志、停止服务。支持热更新。
+- 给 Agent 提供 `vite_preview` 工具（`start` / `state` / `stop`）。
+- 配置：插件设置里的 `defaultProject`（默认项目目录，留空就用当前工作区）。
+- 权限：`http`、`ui`、`tools`、`fs:read`。
+- 限制：一个实例同一时间只能预览一个项目；不会自动装依赖；宿主重启后要重新启动预览。
+
+详见 [plugins/vite-preview/README.md](plugins/vite-preview/README.md)。
+
+### 任务完成通知 · `plugins/xiaoai-hook`
+
+pi 扩展。主对话的一轮任务正常完成后，向 XiaoAiPlayer 的 hook 接口 POST 一条通知，由小爱音箱播报。
+
+- 出错、被中止、子代理和临时会话都不发。接口连不上就当离线，静默跳过。
+- 配置文件 `~/.pi/agent/xiaoai-hook.json`，字段有 `enabled`、`piwebOnly`、`url`、`source`、`token`。里面有令牌，已经写进 `.gitignore`，不要提交。
+
+详见 [plugins/xiaoai-hook/README.md](plugins/xiaoai-hook/README.md)。
+
+### 缓存过期预警 · `plugins/cache-expiry-guard`
+
+pi 扩展。用 Claude 这类模型接着聊时，如果是从别的模型切过来接手，或者距离它上次回复已经超过设定的分钟数（缓存多半过期了），并且上下文够大，就先拦下消息弹窗，显示大概要重写多少 token。弹窗有三个选项：
+
+- **直接发送**
+- **先用便宜模型压缩再发**
+- **生成交接总结**：存到 `.pi-handoff/`，同时在对话里显示一张可复制的卡片，这张卡片不会发给模型。
+
+配置文件 `~/.pi/agent/cache-expiry-guard.json`，字段有 `idleMinutes`、`minContextTokens`、`cheapProvider`、`cheapModel`、`guards`。`guards` 按模型正则逐条配置，每条可以单独覆盖时间和上下文阈值。另外有测试命令 `/cache-guard-test`。
+
+详见 [plugins/cache-expiry-guard/README.md](plugins/cache-expiry-guard/README.md)。
+
+## 主题
+
+### 爆裂魔导 · 惠惠 · `themes/megumin.css`
+
+pi-web-ui 浅色主题，配色取自惠惠的立绘：主强调是红魔之瞳红 `#c8243a`，次强调是巫师帽紫。装饰有背景魔法阵水印、空状态下缓慢旋转的法阵、发送键的“蓄力”光晕、工具运行时的呼吸光，等等。没有配置项。
 
 ## 安装
 
 | 内容 | 放到哪里 | 生效方式 |
 | --- | --- | --- |
-| `plugins/vite-preview/` | `~/.pi-web/plugins/vite-preview/` | 刷新 Web UI 即加载，首次会弹一条能力声明提醒 |
-| `plugins/restart/` | `~/.pi-web/plugins/restart/` | 同上 |
+| `plugins/restart/` | `~/.pi-web/plugins/restart/` | 刷新 Web UI 即加载，首次会弹一条能力声明提醒 |
+| `plugins/vite-preview/` | `~/.pi-web/plugins/vite-preview/` | 同上 |
 | `plugins/xiaoai-hook/xiaoai-hook.js` | `~/.pi/agent/extensions/xiaoai-hook.js` | 重启 pi；配置见该目录 README |
+| `plugins/cache-expiry-guard/cache-expiry-guard.ts` | `~/.pi/agent/extensions/cache-expiry-guard.ts` | 重启 pi；配置见该目录 README |
 | `themes/*.css` | `~/.pi-web/themes/` | 刷新页面，在顶栏主题选择器里选 |
 
-各目录的说明见其中的 README。
+用 pi-web-ui 时，“重启 pi”就是重启 pi-web-ui 服务（可以用上面的一键重启）。
+
+在用的公开包和技能清单见 [PUBLIC.md](PUBLIC.md)。

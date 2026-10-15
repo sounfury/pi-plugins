@@ -1,0 +1,10 @@
+{
+  "idleMinutes": 55,
+  "minContextTokens": 50000,
+  "cheapProvider": "magpie",
+  "cheapModel": "antigravity/gemini-3.8-flash",
+  "guards": [
+    { "pattern": "claude" },
+    { "pattern": "gpt-5", "idleMinutes": 30, "minContextTokens": 80000 }
+  ]
+}
