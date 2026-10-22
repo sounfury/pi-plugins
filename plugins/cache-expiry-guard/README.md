@@ -10,7 +10,7 @@ pi 扩展：用 Claude 这类有提示缓存的模型接着聊时，如果缓存
 2. 当前上下文超过 `minContextTokens`。
 3. 满足下面任意一种情况：
    - **模型切换接手**：当前分支上一条助手回复不是这个模型族回的（比如从 Gemini 切过来），或者这个会话里一直没用过它。
-   - **缓存过期**：距离这个模型族在当前分支上最后一次回复超过 `idleMinutes` 分钟。
+   - **缓存过期**：距离这个模型族在当前分支上最后一次回复超过 `idleMinutes` 分钟。装了 [`cache-mode`](../cache-mode/README.md) 且开着集中模式（5m 缓存）时，对它接管的模型改用 `focusIdleMinutes`。
 
 “最后使用时间”按模型族单独算：中间插几轮别的模型，不会刷新 Claude 的时间。
 
@@ -36,6 +36,7 @@ pi 扩展：用 Claude 这类有提示缓存的模型接着聊时，如果缓存
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `idleMinutes` | `55` | 超过多少分钟没用就当缓存已过期（Claude 缓存最长 1 小时） |
+| `focusIdleMinutes` | `4.5` | `cache-mode` 集中模式下的过期阈值（5m 缓存）；取它和该条规则 `idleMinutes` 中较小的 |
 | `minContextTokens` | `50000` | 上下文小于这个值时不提醒（重写也不贵） |
 | `cheapProvider` | `magpie` | 用来压缩、写交接总结的便宜模型的 provider |
 | `cheapModel` | `antigravity/gemini-3.8-flash` | 便宜模型的 id |

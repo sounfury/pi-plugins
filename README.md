@@ -4,10 +4,11 @@
 
 ```
 plugins/
-  restart/             一键重启（pi-web-ui 插件）
   vite-preview/        前端预览（pi-web-ui 插件）
   xiaoai-hook/         任务完成后用小爱音箱播报（pi 扩展）
   cache-expiry-guard/  Claude 缓存过期预警（pi 扩展）
+  cache-mode/          Magpie Claude 缓存时长切换：日常 1h / 集中 5m（pi 扩展）
+  cache-rain/          集中模式下页面下雨，雨停 = 缓存过期（pi-web-ui 插件）
 themes/
   megumin.css          爆裂魔导 · 惠惠（pi-web-ui 主题）
 PUBLIC.md              在用的公开包 / 技能清单（只记名字）
@@ -19,17 +20,6 @@ PUBLIC.md              在用的公开包 / 技能清单（只记名字）
 - **pi 扩展**（单个 `.js` / `.ts` 文件）由 pi 本身加载，在命令行 `pi` 和 pi-web-ui 里都生效。
 
 ## 插件
-
-### 一键重启 · `plugins/restart`
-
-pi-web-ui 插件。点一下就重启 pi-web-ui 服务（里面的 pi 和扩展也一起重启），服务恢复后页面会自动刷新。
-
-- 入口在顶栏「插件」菜单，可以用图钉钉到顶栏。点了会先弹全屏确认，Esc 取消。
-- 只在由 supervisor 托管的实例上生效（`pi-web-ui server install` 装的 systemd / launchd 服务）。前台运行的实例会拒绝重启。
-- 走宿主自己的优雅关机，进行中的对话重启后会自动续跑。重启一次大约 6–10 秒，90 秒还没恢复就会提示。
-- 权限：`http`。没有配置项。
-
-详见 [plugins/restart/README.md](plugins/restart/README.md)。
 
 ### 前端预览 · `plugins/vite-preview`
 
@@ -64,6 +54,23 @@ pi 扩展。用 Claude 这类模型接着聊时，如果是从别的模型切过
 
 详见 [plugins/cache-expiry-guard/README.md](plugins/cache-expiry-guard/README.md)。
 
+### 缓存模式 · `plugins/cache-mode`
+
+pi 扩展。给经 Magpie 订阅桥接的 Claude 切换缓存时长：日常 1h（默认）、集中 5m（连续干活更省）、关闭（交回 Magpie）。做法是让 Claude 请求改走 Magpie 的 `/v1/messages`，并带上 `X-Magpie-Cache-Marks: client`（Magpie #1717），不改 `models.json`。
+
+- 命令 `/cache-mode [focus|daily|off|status]`，状态栏显示模式和缓存截止时间。
+- 集中模式空闲超过 `focusAutoOffMinutes`（默认 30）分钟，自动切回日常。
+- 集中模式下，`cache-expiry-guard` 的过期阈值自动变成 `focusIdleMinutes`（默认 4.5 分钟）。
+- 配置文件 `~/.pi/agent/cache-mode.json`。
+
+详见 [plugins/cache-mode/README.md](plugins/cache-mode/README.md)。
+
+### 缓存雨 · `plugins/cache-rain`
+
+pi-web-ui 插件，配合 `cache-mode`。输入框旁加一个「缓存」下拉；集中模式下整个页面下雨，右上角倒计时。最后 60 秒雨变小、冒「ゴゴゴ」、浮出「覺悟」独白；归零时雨停，『暴雨結束之時』『就是我的死期』加 To Be Continued；赶在最后续上则是彩虹 +「Catch the Rainbow！」。权限：`ui`、`http`。
+
+详见 [plugins/cache-rain/README.md](plugins/cache-rain/README.md)。
+
 ## 主题
 
 ### 爆裂魔导 · 惠惠 · `themes/megumin.css`
@@ -74,12 +81,13 @@ pi-web-ui 浅色主题，配色取自惠惠的立绘：主强调是红魔之瞳�
 
 | 内容 | 放到哪里 | 生效方式 |
 | --- | --- | --- |
-| `plugins/restart/` | `~/.pi-web/plugins/restart/` | 刷新 Web UI 即加载，首次会弹一条能力声明提醒 |
-| `plugins/vite-preview/` | `~/.pi-web/plugins/vite-preview/` | 同上 |
+| `plugins/vite-preview/` | `~/.pi-web/plugins/vite-preview/` | 刷新 Web UI 即加载，首次会弹一条能力声明提醒 |
 | `plugins/xiaoai-hook/xiaoai-hook.js` | `~/.pi/agent/extensions/xiaoai-hook.js` | 重启 pi；配置见该目录 README |
 | `plugins/cache-expiry-guard/cache-expiry-guard.ts` | `~/.pi/agent/extensions/cache-expiry-guard.ts` | 重启 pi；配置见该目录 README |
+| `plugins/cache-mode/cache-mode.ts` | `~/.pi/agent/extensions/cache-mode.ts` | 重启 pi；配置见该目录 README |
+| `plugins/cache-rain/` | `pi-web-ui install <目录>` | 刷新 Web UI |
 | `themes/*.css` | `~/.pi-web/themes/` | 刷新页面，在顶栏主题选择器里选 |
 
-用 pi-web-ui 时，“重启 pi”就是重启 pi-web-ui 服务（可以用上面的一键重启）。
+用 pi-web-ui 时，“重启 pi”就是重启 pi-web-ui 服务，可以使用 pi-web-ui 自带的重启功能。
 
 在用的公开包和技能清单见 [PUBLIC.md](PUBLIC.md)。

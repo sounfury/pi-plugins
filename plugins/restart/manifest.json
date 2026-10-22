@@ -1,9 +1,0 @@
-{
-  "id": "restart",
-  "name": "一键重启",
-  "version": "0.2.0",
-  "description": "一键重启 pi-web-ui 服务（连同其中的 pi 和扩展），服务恢复后自动重新打开页面。可在插件菜单里钉到顶栏。",
-  "icon": "⟳",
-  "apiVersion": 2,
-  "permissions": ["http"]
-}

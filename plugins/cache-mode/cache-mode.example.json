@@ -1,0 +1,6 @@
+{
+  "mode": "daily",
+  "provider": "magpie",
+  "modelPattern": "^claude/",
+  "focusAutoOffMinutes": 30
+}

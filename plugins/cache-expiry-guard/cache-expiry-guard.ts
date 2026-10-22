@@ -11,11 +11,23 @@ import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 
 const CONFIG_PATH = process.env.PI_CEG_CONFIG ?? join(homedir(), ".pi", "agent", "cache-expiry-guard.json");
+// cache-mode 扩展的模式文件：集中模式（5m 缓存）下用 focusIdleMinutes 当过期阈值
+const CACHE_MODE_PATH = process.env.PI_CACHE_MODE_CONFIG ?? join(homedir(), ".pi", "agent", "cache-mode.json");
+function focusModeFor(modelId: string): boolean {
+	try {
+		if (!existsSync(CACHE_MODE_PATH)) return false;
+		const m = JSON.parse(readFileSync(CACHE_MODE_PATH, "utf8"));
+		if (m?.mode !== "focus") return false;
+		const [provider, ...rest] = modelId.split("/");
+		return provider === (m.provider ?? "magpie") && new RegExp(m.modelPattern ?? "^claude/", "i").test(rest.join("/"));
+	} catch { return false; }
+}
 const HANDOFF_DIR = ".pi-handoff";
 interface Rule { pattern: string; idleMinutes?: number; minContextTokens?: number }
-interface Config { idleMinutes: number; minContextTokens: number; cheapProvider: string; cheapModel: string; guards: Rule[] }
+interface Config { idleMinutes: number; focusIdleMinutes: number; minContextTokens: number; cheapProvider: string; cheapModel: string; guards: Rule[] }
 const DEFAULTS: Config = {
 	idleMinutes: 55,
+	focusIdleMinutes: 4.5,
 	minContextTokens: 50_000,
 	cheapProvider: "magpie",
 	cheapModel: "antigravity/gemini-3.8-flash",
@@ -118,7 +130,8 @@ export default function (pi: ExtensionAPI) {
 		const rule = matchRule(cfg, modelId);
 		let reason: string | undefined;
 		if (rule) {
-			const idleLimit = rule.idleMinutes ?? cfg.idleMinutes;
+			const focus = focusModeFor(modelId);
+			const idleLimit = focus ? Math.min(rule.idleMinutes ?? cfg.idleMinutes, cfg.focusIdleMinutes) : (rule.idleMinutes ?? cfg.idleMinutes);
 			const minTok = rule.minContextTokens ?? cfg.minContextTokens;
 			const re = new RegExp(rule.pattern, "i");
 			const { lastModel, lastMatchTime } = scanBranch(ctx, rule);
@@ -126,7 +139,9 @@ export default function (pi: ExtensionAPI) {
 			if (tokens > minTok) {
 				if (lastModel && !re.test(lastModel)) reason = `模型切换接手（上一轮是 ${lastModel}）`;
 				else if (lastMatchTime === undefined && lastModel) reason = `模型切换接手（本会话之前没用过 ${rule.pattern}）`;
-				else if (idleMin > idleLimit) reason = `缓存过期（距上次 ${rule.pattern} 回复约 ${Math.round(idleMin)} 分钟）`;
+				else if (idleMin > idleLimit) reason = focus
+					? `『暴雨結束之時，就是我的死期。』（集中模式 5m 缓存，距上次 ${rule.pattern} 回复约 ${Math.round(idleMin)} 分钟）`
+					: `缓存过期（距上次 ${rule.pattern} 回复约 ${Math.round(idleMin)} 分钟）`;
 			}
 		}
 		if (!reason && force) reason = "测试（/cache-guard-test 强制）";
