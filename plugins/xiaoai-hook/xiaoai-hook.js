@@ -24,6 +24,25 @@ export function readConfig() {
   }
 }
 
+// 显式按配置时区计算，避免服务器采用 UTC 时把静默时段错开。
+export function isQuietTime(config, now = new Date()) {
+  const quiet = config.quietHours;
+  if (quiet?.enabled !== true) return false;
+  const days = quiet.weekdays ?? [1, 2, 3, 4, 5];
+  const beforeHour = quiet.beforeHour ?? 19;
+  if (!Array.isArray(days) || days.some((day) => !Number.isInteger(day) || day < 1 || day > 7) ||
+      !Number.isInteger(beforeHour) || beforeHour < 0 || beforeHour > 24) {
+    throw new Error("quietHours 的 weekdays 或 beforeHour 无效");
+  }
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: quiet.timeZone || "Asia/Shanghai",
+    weekday: "short", hour: "2-digit", hourCycle: "h23",
+  }).formatToParts(now);
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  const weekday = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[value("weekday")];
+  return days.includes(weekday) && Number(value("hour")) < beforeHour;
+}
+
 export function isPiWeb(env = process.env, argv = process.argv) {
   if (env.PI_WEB_LAUNCHED_BY || env.PI_WEB_PORT) return true;
   return argv.slice(1).some((arg) => /(?:^|[\\/])pi-web-ui[\\/](?:bin[\\/]pi-web-ui\.mjs|(?:dist[\\/])?server[\\/]index\.js)$/.test(arg));
@@ -98,6 +117,7 @@ export function attachNotifier(pi, options = {}) {
   const detectPiWeb = options.isPiWeb || isPiWeb;
   const send = options.send || postNotification;
   const makeId = options.makeId || randomUUID;
+  const now = options.now || (() => new Date());
   let outcome;
   let active = false;
   const offStart = pi.on("agent_start", () => {
@@ -138,9 +158,13 @@ export function attachNotifier(pi, options = {}) {
         debug("skip_config", { enabled: config.enabled === true, piweb });
         return;
       }
+      if (isQuietTime(config, now())) {
+        debug("skip_quiet_hours", { timeZone: config.quietHours.timeZone || "Asia/Shanghai" });
+        return;
+      }
       const source = config.source || "PiWeb";
       const task = conversationName(pi, ctx);
-      // 插件只报告事件；播报模板由 XiaoAiPlayer 的 HOOK_TEXT 统一管理。
+      // 插件只报告事件；播报模板由通知服务统一管理。
       const payload = { source, event_id: `${sessionId}:${makeId()}`, task };
       await send(config, payload);
       debug("sent", { source });
@@ -150,9 +174,9 @@ export function attachNotifier(pi, options = {}) {
         return;
       }
       debug("send_failed", { name: error.name });
-      console.error("[xiaoai-hook] 完成通知发送失败，请检查接口、令牌和 SSH 隧道", error.name);
+      console.error("[xiaoai-hook] 完成通知发送失败，请检查通知接口、令牌和网络连接", error.name);
       try {
-        if (ctx.hasUI) ctx.ui.notify("小爱完成通知发送失败，请检查通知接口和 SSH 隧道", "warning");
+        if (ctx.hasUI) ctx.ui.notify("小爱完成通知发送失败，请检查通知接口、令牌和网络连接", "warning");
       } catch {}
     }
   });

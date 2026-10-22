@@ -1,0 +1,24 @@
+[Unit]
+Description=Authenticated task notifications through Mijia
+After=network-online.target mijia-service.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/home-tools/task-notify
+EnvironmentFile=/home/ubuntu/.config/task-notify.env
+ExecStart=/usr/bin/python3 /home/ubuntu/home-tools/task-notify/server.py
+Restart=on-failure
+RestartSec=3
+StateDirectory=task-notify
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

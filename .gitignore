@@ -1,4 +1,9 @@
 .pi-approved
 xiaoai-hook.json
+xiaoai-hook.json.*
 *.log
 node_modules/
+__pycache__/
+*.py[cod]
+*.env
+*.sqlite3*
