@@ -16,13 +16,15 @@ import {
 	streamSimpleAnthropic,
 	streamSimpleOpenAICompletions,
 } from "@earendil-works/pi-ai";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 type Mode = "daily" | "focus" | "off";
 interface Config {
 	mode: Mode;
+	/** 最近一次手动或自动切换的时间，避免旧会话让刚选的集中模式立即退出 */
+	modeChangedAt?: number;
 	/** 要接管的 provider（pi 里 Magpie 的 provider id） */
 	provider: string;
 	/** 匹配模型 id 的正则（不区分大小写），默认只管 Magpie 的 Claude 订阅模型 */
@@ -42,7 +44,7 @@ const DEFAULTS: Config = {
 	mode: "daily",
 	provider: "magpie",
 	modelPattern: "^claude/",
-	focusAutoOffMinutes: 30,
+	focusAutoOffMinutes: 0,
 	anthropicBaseUrl: "",
 };
 const TTL_SEC: Record<Mode, number> = { daily: 3600, focus: 300, off: 3600 };
@@ -80,7 +82,7 @@ function loadConfig(): Config {
 }
 function saveMode(mode: Mode) {
 	const raw = readJson<Config>(CONFIG_PATH) ?? {};
-	writeJson(CONFIG_PATH, { ...raw, mode });
+	writeJson(CONFIG_PATH, { ...raw, mode, modeChangedAt: Date.now() });
 }
 function loadState(): State {
 	const s = readJson<State>(STATE_PATH);
@@ -197,6 +199,12 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setStatus(STATUS_KEY, text);
 	};
 
+	const syncModel = (ctx: ExtensionContext) => {
+		const cfg = loadConfig();
+		if (cfg.mode !== "off" && !matches(cfg, ctx.model as any)) saveMode("off");
+		refreshStatus(ctx);
+	};
+
 	const switchMode = (ctx: ExtensionContext, next: Mode, why?: string) => {
 		const prev = loadConfig().mode;
 		if (prev === next) {
@@ -211,6 +219,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("cache-mode", {
 		description: "切换 Magpie Claude 的缓存时长：daily（1h）/ focus（5m）/ off；不带参数弹出选择",
 		handler: async (args, ctx) => {
+			syncModel(ctx);
 			const arg = (args ?? "").trim().toLowerCase();
 			const alias: Record<string, Mode> = {
 				daily: "daily", "1h": "daily", 日常: "daily", long: "daily",
@@ -222,7 +231,12 @@ export default function (pi: ExtensionAPI) {
 				const sid = ctx.sessionManager.getSessionId?.();
 				const e = sid ? loadState().sessions[sid] : undefined;
 				const tail = e?.at ? `；本会话最后一次 Claude 请求 ${fmtClock(e.at)}（${e.mode}，${e.ttlSec / 60} 分钟）${e.dropped ? `；Magpie 丢掉的缓存点：${e.dropped}` : ""}` : "";
-				ctx.ui.notify(`当前：${MODE_LABEL[cfg.mode]}${tail}`, "info");
+				const mode = matches(cfg, ctx.model as any) ? cfg.mode : "off";
+				ctx.ui.notify(`当前：${mode === "off" && !matches(cfg, ctx.model as any) ? "关闭（当前模型不在缓存配置范围内）" : MODE_LABEL[mode]}${tail}`, "info");
+				return;
+			}
+			if (!matches(loadConfig(), ctx.model as any)) {
+				ctx.ui.notify("当前模型不在缓存配置范围内，缓存模式已关闭；切回匹配模型后可选 5m 或 1h。", arg && alias[arg] !== "off" ? "warning" : "info");
 				return;
 			}
 			let next: Mode | undefined = alias[arg];
@@ -247,19 +261,22 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (_e, ctx) => refreshStatus(ctx));
-	pi.on("model_select", async (_e, ctx) => refreshStatus(ctx));
+	pi.on("session_start", async (_e, ctx) => syncModel(ctx));
+	pi.on("model_select", async (_e, ctx) => syncModel(ctx));
 	pi.on("turn_end", async (_e, ctx) => refreshStatus(ctx));
 	pi.on("agent_end", async (_e, ctx) => refreshStatus(ctx));
 
-	// 集中模式下雨停了太久：下一条消息发出前自动切回日常（缓存早没了，这时切换不多花钱）
+	// 手动进入集中模式也算活动；旧会话的记录不能让刚选择的模式立即退出。
 	pi.on("input", async (event: any, ctx) => {
 		const cfg = loadConfig();
 		if (cfg.mode !== "focus" || !(cfg.focusAutoOffMinutes > 0) || event.source === "extension") return { action: "continue" };
 		if (!matches(cfg, ctx.model as any)) return { action: "continue" };
-		const entries = Object.values(loadState().sessions).filter((e) => e.mode === "focus");
-		if (!entries.length) return { action: "continue" };
-		const last = Math.max(...entries.map((e) => e.at));
+		const entries = Object.values(loadState().sessions).filter((e) => e.mode === "focus" && Number.isFinite(e.at));
+		let changedAt = cfg.modeChangedAt;
+		// 兼容旧版配置及手动编辑配置文件的情况。
+		try { changedAt = Math.max(Number.isFinite(changedAt) ? changedAt! : 0, statSync(CONFIG_PATH).mtimeMs); } catch { /* 文件刚被移走时仍使用已读取的时间 */ }
+		const last = Math.max(Number.isFinite(changedAt) ? changedAt! : 0, ...entries.map((e) => e.at));
+		if (!last) return { action: "continue" };
 		const idleMin = (Date.now() - last) / 60000;
 		if (idleMin > cfg.focusAutoOffMinutes) {
 			saveMode("daily");

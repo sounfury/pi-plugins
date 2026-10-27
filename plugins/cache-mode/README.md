@@ -29,10 +29,11 @@ Magpie 的订阅桥接默认把 Claude Code 的缓存写死成 1h。Magpie #1717
 - `/cache-mode focus`（或 `5m`、`集中`）、`/cache-mode daily`（或 `1h`、`日常`）、`/cache-mode off`。
 - `/cache-mode status`：看当前模式、本会话最后一次请求的时间，以及 Magpie 丢掉的缓存点（如果有）。
 - pi-web-ui 里也可以用输入框旁的「缓存」下拉（需要装 `cache-rain` 插件）。
+- 当前模型不匹配配置的 `provider` / `modelPattern` 时，直接把全局模式改为关闭；网页只保留关闭选项，命令也不能开启。切回匹配模型后可手动选择 5m / 1h，不自动恢复旧选择。
 
 状态栏会显示当前模式和「缓存到 几点几分」。
 
-集中模式下，如果所有会话都超过 `focusAutoOffMinutes` 分钟没有 Claude 请求，下一条消息发出前会自动切回日常。这时缓存早就过期了，切换不会多花钱。
+默认保持手动选择，不自动切回日常。如果把 `focusAutoOffMinutes` 设为正数，则从最近一次手动切到集中模式或任意会话的最后一次集中模式 Claude 请求开始，超过该分钟数没有活动后，下一条消息发出前会自动切回日常。刚手动选择 5m 时会重新计时，不会受旧会话记录影响。设为 `0`（默认）关闭自动切换。
 
 ## 什么时候会多写一次缓存
 
@@ -49,7 +50,7 @@ Magpie 的订阅桥接默认把 Claude Code 的缓存写死成 1h。Magpie #1717
 | `mode` | `daily` | `daily` / `focus` / `off` |
 | `provider` | `magpie` | pi 里 Magpie 的 provider id |
 | `modelPattern` | `^claude/` | 要接管的模型 id（正则，不区分大小写） |
-| `focusAutoOffMinutes` | `30` | 集中模式空闲多少分钟后自动切回日常；`0` 不自动切 |
+| `focusAutoOffMinutes` | `0` | 集中模式空闲多少分钟后自动切回日常；`0` 不自动切，保持手动选择 |
 | `anthropicBaseUrl` | 空 | Magpie 网关根地址；留空从 provider 的 `baseUrl` 推出 |
 
 环境变量 `PI_CACHE_MODE_CONFIG`、`PI_CACHE_MODE_STATE` 可以改两个文件的位置（测试用）。
@@ -63,8 +64,16 @@ cp cache-mode.example.json ~/.pi/agent/cache-mode.json   # 可选
 
 新开的对话会加载它；已经开着的对话要重启 pi-web-ui（或 pi）后才生效。
 
+## 测试
+
+需要 Node.js 24（使用内置 TypeScript 加载和模块钩子），在仓库根目录运行：
+
+```sh
+node --test plugins/cache-mode/tests/idle.test.mjs plugins/cache-rain/tests/server.test.mjs
+```
+
 ## 已知限制
 
 - 依赖 Magpie v0.1.1268 及以后的版本。
 - 倒计时按请求发出的时间算，比 Anthropic 那边实际的过期时间略早，只会偏保守。
-- 模式是全局的，不分对话。
+- 所有会话共享一份模式；切到非匹配模型会全局关闭，不保留按标签页区分的模式。

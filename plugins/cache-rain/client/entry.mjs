@@ -404,9 +404,7 @@ function start() {
     if (dead || !s || s.kind !== 'cache-rain') return;
     skew = (s.now ?? Date.now()) - Date.now();
     state = s;
-    // 宿主重扫插件时会把下拉的值还原成 manifest 里的默认值，这里按实际模式校正
-    const sel = document.querySelector('select[aria-label="缓存"]');
-    if (sel && sel.value !== s.mode && [...sel.options].some((o) => o.value === s.mode)) sel.value = s.mode;
+    // 下拉完全由宿主的全局状态渲染，雨幕只订阅快照，不再修改宿主 DOM。
     for (const fn of listeners) { try { fn(s); } catch { /* 页面已卸载 */ } }
     tick();
   };
@@ -415,13 +413,17 @@ function start() {
     try { accept(await api('state')); } catch { /* 服务重启中，下次再试 */ }
   };
   const setMode = async (mode) => {
+    if (!state?.tracked && mode !== 'off') return;
     try {
       accept(await api('mode', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-cache-rain': '1' },
         body: JSON.stringify({ mode }),
       }));
-    } catch (error) { console.error('[plugin:cache-rain] 切换模式失败:', error); }
+    } catch (error) {
+      console.error('[plugin:cache-rain] 切换模式失败:', error);
+      await poll();
+    }
   };
 
   // 输入框旁「缓存」下拉
@@ -476,7 +478,7 @@ function start() {
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.body) start();
 else if (typeof window !== 'undefined') window.addEventListener('DOMContentLoaded', start, { once: true });
 
-const MODE_NAMES = { daily: '☀ 日常 · 1h', focus: '☔ 集中 · 5m', off: '关闭（交给 Magpie，默认 1h）' };
+const MODE_NAMES = { daily: '☀ 日常 · 1h', focus: '☔ 集中 · 5m', off: '关闭（不接管缓存）' };
 
 /** 插件页：说明 + 切换 + 预览 */
 export default {
@@ -501,8 +503,11 @@ export default {
     el.querySelector('.demo-rainbow').addEventListener('click', () => rain?.demo(true));
     const update = (s) => {
       el.querySelector('.mode').textContent = MODE_NAMES[s.mode] ?? s.mode;
-      for (const b of el.querySelectorAll('[data-mode]')) b.classList.toggle('on', b.dataset.mode === s.mode);
-      el.querySelector('.state').textContent = !s.tracked ? '（当前对话不是 Magpie 的 Claude，这里不下雨）'
+      for (const b of el.querySelectorAll('[data-mode]')) {
+        b.classList.toggle('on', b.dataset.mode === s.mode);
+        b.disabled = !s.tracked && b.dataset.mode !== 'off';
+      }
+      el.querySelector('.state').textContent = !s.tracked ? '（当前模型不在缓存配置范围内，仅可关闭）'
         : s.entry?.at ? `（本对话上次请求 ${new Date(s.entry.at).toLocaleTimeString()}，${s.entry.ttlSec / 60} 分钟缓存${s.entry.dropped ? `；丢掉的缓存点 ${s.entry.dropped}` : ''}）`
           : '（本对话还没有请求）';
     };

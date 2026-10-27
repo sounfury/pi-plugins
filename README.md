@@ -59,7 +59,7 @@ pi 扩展。用 Claude 这类模型接着聊时，如果是从别的模型切过
 pi 扩展。给经 Magpie 订阅桥接的 Claude 切换缓存时长：日常 1h（默认）、集中 5m（连续干活更省）、关闭（交回 Magpie）。做法是让 Claude 请求改走 Magpie 的 `/v1/messages`，并带上 `X-Magpie-Cache-Marks: client`（Magpie #1717），不改 `models.json`。
 
 - 命令 `/cache-mode [focus|daily|off|status]`，状态栏显示模式和缓存截止时间。
-- 集中模式空闲超过 `focusAutoOffMinutes`（默认 30）分钟，自动切回日常。
+- 默认保持手动选择；可通过 `focusAutoOffMinutes` 开启空闲后自动切回日常（默认 `0`，关闭自动切换）。
 - 集中模式下，`cache-expiry-guard` 的过期阈值自动变成 `focusIdleMinutes`（默认 4.5 分钟）。
 - 配置文件 `~/.pi/agent/cache-mode.json`。
 
