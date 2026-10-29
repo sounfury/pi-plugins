@@ -4,7 +4,8 @@
  *
  * 做法：给 magpie provider 注册一个请求包装。命中的 Claude 模型改走 Anthropic 协议（/v1/messages），
  * 带上 `X-Magpie-Cache-Marks: client`，让 Magpie 按 pi 写的 cache_control 来定 TTL（magpie #1717）；
- * 其他模型原样走 openai-completions。不改 models.json，Magpie 同步重写它也不受影响。
+ * 其他模型原样走 openai-completions。模型本身已经走 Anthropic 协议时，用请求事件补上缓存控制。
+ * 不改 models.json，Magpie 同步重写它也不受影响。
  *
  * 模式存在 ~/.pi/agent/cache-mode.json；每个会话最后一次 Claude 请求的时间写到
  * ~/.pi/agent/cache-mode.state.json，cache-expiry-guard 和 pi-web-ui 的 cache-rain 插件都读它。
@@ -27,7 +28,7 @@ interface Config {
 	modeChangedAt?: number;
 	/** 要接管的 provider（pi 里 Magpie 的 provider id） */
 	provider: string;
-	/** 匹配模型 id 的正则（不区分大小写），默认只管 Magpie 的 Claude 订阅模型 */
+	/** 匹配模型 id 的正则（不区分大小写），默认匹配含可选网关前缀的 Claude 订阅模型 */
 	modelPattern: string;
 	/** 集中模式下，所有会话都超过这么多分钟没有 Claude 请求，下一条消息前自动切回日常；0 = 不自动切 */
 	focusAutoOffMinutes: number;
@@ -43,7 +44,7 @@ const STATE_PATH = process.env.PI_CACHE_MODE_STATE ?? join(AGENT_DIR, "cache-mod
 const DEFAULTS: Config = {
 	mode: "daily",
 	provider: "magpie",
-	modelPattern: "^claude/",
+	modelPattern: "^(?:[^/]+/)*claude/",
 	focusAutoOffMinutes: 0,
 	anthropicBaseUrl: "",
 };
@@ -179,6 +180,67 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	pi.registerProvider(boot.provider, { api: "openai-completions", streamSimple: wrapped as any });
+
+	// 原生 anthropic-messages 不经过上面的 OpenAI 包装，必须从实际请求事件接管。
+	// SDK 先组装 headers，再生成 payload；按会话保存本次请求选择，直到 payload 确认模型和缓存点。
+	const nativePending = new Map<string, { mode: Mode; model: string }>();
+	const nativeResponses = new Set<string>();
+	pi.on("before_provider_headers", (event, ctx) => {
+		const sid = ctx.sessionManager.getSessionId?.();
+		if (!sid) return;
+		nativePending.delete(sid);
+		nativeResponses.delete(sid);
+		const cfg = loadConfig();
+		const model = ctx.model;
+		if (cfg.mode === "off" || model?.api !== "anthropic-messages" || !matches(cfg, model)) return;
+		for (const key of Object.keys(event.headers)) {
+			if (key.toLowerCase() === "x-magpie-cache-marks") delete event.headers[key];
+		}
+		event.headers["X-Magpie-Cache-Marks"] = "client";
+		nativePending.set(sid, { mode: cfg.mode, model: model.id });
+	});
+	pi.on("before_provider_request", (event, ctx) => {
+		const sid = ctx.sessionManager.getSessionId?.();
+		const pending = sid ? nativePending.get(sid) : undefined;
+		if (!sid || !pending) return;
+		nativePending.delete(sid);
+		const raw = event.payload as any;
+		if (raw?.model !== pending.model) return;
+		let cached = false;
+		const setTTL = (block: any) => {
+			if (block?.cache_control?.type !== "ephemeral") return block;
+			cached = true;
+			const { ttl: _ttl, ...control } = block.cache_control;
+			return { ...block, cache_control: { ...control, ...(pending.mode === "daily" ? { ttl: "1h" } : {}) } };
+		};
+		const payload = setTTL({
+			...raw,
+			...(Array.isArray(raw.system) ? { system: raw.system.map(setTTL) } : {}),
+			...(Array.isArray(raw.messages) ? { messages: raw.messages.map((message: any) => ({
+				...message,
+				...(Array.isArray(message.content) ? { content: message.content.map(setTTL) } : {}),
+			})) } : {}),
+			...(Array.isArray(raw.tools) ? { tools: raw.tools.map((tool: any) => {
+				const { cache_control: _control, ...definition } = tool;
+				return definition;
+			}) } : {}),
+		});
+		// SDK 的 cacheRetention:none 没有缓存点，保持不记录、不启动倒计时。
+		if (cached) {
+			recordRequest(sid, { at: Date.now(), ttlSec: TTL_SEC[pending.mode], mode: pending.mode, model: pending.model, dropped: undefined });
+			nativeResponses.add(sid);
+		}
+		return payload;
+	});
+	pi.on("after_provider_response", (event, ctx) => {
+		const sid = ctx.sessionManager.getSessionId?.();
+		if (!sid || !nativeResponses.delete(sid) || event.status >= 400) return;
+		recordRequest(sid, { dropped: event.headers["x-magpie-cache-marks-dropped"] || undefined });
+	});
+	pi.on("session_shutdown", (_event, ctx) => {
+		const sid = ctx.sessionManager.getSessionId?.();
+		if (sid) { nativePending.delete(sid); nativeResponses.delete(sid); }
+	});
 
 	const refreshStatus = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;

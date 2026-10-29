@@ -43,6 +43,52 @@ describe('cache-rain server', () => {
     done();
   });
 
+  for (const model of [
+    'magpie/remote-magpie/claude/claude-opus-5-5',
+    'magpie/region/remote-magpie/claude/claude-sonnet-4-6',
+  ]) {
+    it(`未发送消息的新对话可开启缓存：${model}`, () => {
+      const { host, api, done } = setup({ sessionId: 'new-session', model, isStreaming: false }, { config: { mode: 'off' } });
+      try {
+        assert.deepEqual(host.updates.at(-1)[1].options.map(o => o.value), ['daily', 'focus', 'off']);
+        for (const mode of ['focus', 'daily']) {
+          api.setMode(mode, 'new-tab');
+          const s = api.snapshot('new-tab');
+          assert.equal(s.tracked, true);
+          assert.equal(s.mode, mode);
+          assert.equal(s.model, model);
+          assert.equal(s.entry, null);
+          assert.equal(s.streaming, false);
+          assert.equal(host.updates.at(-1)[1].value, mode);
+        }
+      } finally { done(); }
+    });
+  }
+
+  it('显式配置的路径限制仍生效，不自动放宽到远程 Claude', () => {
+    const { api, done } = setup({ model: 'magpie/remote-magpie/claude/claude-opus-5-5' }, { config: { mode: 'focus', modelPattern: '^claude/' } });
+    try {
+      assert.equal(api.snapshot().tracked, false);
+      assert.equal(api.config().mode, 'off');
+      assert.throws(() => api.setMode('focus'), /当前模型不在缓存配置范围内/);
+    } finally { done(); }
+  });
+
+  for (const model of [
+    'magpie/remote-magpie/codex/gpt-6-astra',
+    'magpie/remote-magpie/not-claude/claude-opus-5-5',
+    'other/remote-magpie/claude/claude-opus-5-5',
+  ]) {
+    it(`远程前缀不放行其他模型或 provider：${model}`, () => {
+      const { api, done } = setup({ model }, { config: { mode: 'focus' } });
+      try {
+        assert.equal(api.snapshot().tracked, false);
+        assert.equal(api.config().mode, 'off');
+        assert.throws(() => api.setMode('daily'), /当前模型不在缓存配置范围内/);
+      } finally { done(); }
+    });
+  }
+
   it('manifest 在输入框旁声明了三档下拉', () => {
     const m = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
     const item = m.ui.items.find((x) => x.id === 'mode');

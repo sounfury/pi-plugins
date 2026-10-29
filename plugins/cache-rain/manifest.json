@@ -1,7 +1,7 @@
 {
   "id": "cache-rain",
   "name": "缓存雨",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "配合 pi 扩展 cache-mode：在输入框旁切换 Magpie Claude 的缓存时长（日常 1h / 集中 5m）；集中模式下页面下雨。『雨停之後，我就會死。』",
   "icon": "☔",
   "apiVersion": 2,

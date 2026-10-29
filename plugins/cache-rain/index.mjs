@@ -22,7 +22,7 @@ export function createCacheRain(host, options = {}) {
   const statePath = env.PI_CACHE_MODE_STATE || join(AGENT_DIR, 'cache-mode.state.json');
   const now = options.now || (() => Date.now());
   const config = () => {
-    const c = { mode: 'daily', provider: 'magpie', modelPattern: '^claude/', ...(readJson(configPath) || {}) };
+    const c = { mode: 'daily', provider: 'magpie', modelPattern: '^(?:[^/]+/)*claude/', ...(readJson(configPath) || {}) };
     if (!MODES.includes(c.mode)) c.mode = 'daily';
     return c;
   };

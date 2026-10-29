@@ -12,10 +12,11 @@ pi 扩展：给经 Magpie 订阅桥接的 Claude 切换提示缓存的时长。
 
 Magpie 的订阅桥接默认把 Claude Code 的缓存写死成 1h。Magpie #1717（v0.1.1268 起）加了一个开关：请求 `/v1/messages` 时带上 `X-Magpie-Cache-Marks: client`，就按请求里的 `cache_control` 定 TTL，没写 ttl 按 5m，写了 `ttl: "1h"` 按 1h。
 
-但 Magpie 写给 pi 的 `models.json` 里，Claude 订阅模型走的是 `openai-completions`，这个开关在那条路上不生效。所以扩展给 `magpie` provider 注册了一个请求包装：
+Magpie 的 Claude 模型可能配置为 `openai-completions`，也可能直接配置为 `anthropic-messages`；扩展分别处理两条请求路径：
 
-- 命中的模型（默认 `^claude/`）改走 `anthropic-messages`，发到网关根地址（`baseUrl` 去掉 `/v1`），带上上面那个请求头。
-- 集中模式按 pi 的 `cacheRetention: "short"` 发（不带 ttl → 5m），日常模式按 `"long"` 发（`ttl: "1h"`）。请求本身指定了 `none` 的，保持不缓存。
+- 命中的模型（默认 `^(?:[^/]+/)*claude/`）改走 `anthropic-messages`，发到网关根地址（`baseUrl` 去掉 `/v1`），带上上面那个请求头。既支持 `claude/...`，也支持 `remote-magpie/claude/...` 等带网关前缀的订阅模型；provider 仍须为 `magpie`。
+- 对已经使用 `anthropic-messages` 的模型，通过 `before_provider_headers` / `before_provider_request` 补上客户端缓存头并调整现有缓存点的 TTL；工具缓存点同样移除，请求实际生成时记录会话时间。SDK 先处理请求头、再生成 payload；不依赖 OpenAI 包装是否被调用。
+- 集中模式按 pi 的 `cacheRetention: "short"` 发（不带 ttl → 5m），日常模式按 `"long"` 发（`ttl: "1h"`）。请求本身指定了 `none` 的，保持不缓存；原生请求没有缓存点时也不会伪造倒计时。
 - 工具定义上不打缓存标记（工具归 Claude Code 管，Magpie 只会丢掉并报告）。
 - 其他模型原样走 `openai-completions`。
 
@@ -49,11 +50,13 @@ Magpie 的订阅桥接默认把 Claude Code 的缓存写死成 1h。Magpie #1717
 | --- | --- | --- |
 | `mode` | `daily` | `daily` / `focus` / `off` |
 | `provider` | `magpie` | pi 里 Magpie 的 provider id |
-| `modelPattern` | `^claude/` | 要接管的模型 id（正则，不区分大小写） |
+| `modelPattern` | `^(?:[^/]+/)*claude/` | 要接管的模型 id（正则，不区分大小写），允许 Claude 路径前有网关前缀 |
 | `focusAutoOffMinutes` | `0` | 集中模式空闲多少分钟后自动切回日常；`0` 不自动切，保持手动选择 |
 | `anthropicBaseUrl` | 空 | Magpie 网关根地址；留空从 provider 的 `baseUrl` 推出 |
 
 环境变量 `PI_CACHE_MODE_CONFIG`、`PI_CACHE_MODE_STATE` 可以改两个文件的位置（测试用）。
+
+已有配置显式写了 `"modelPattern": "^claude/"` 的，仍按该限制执行。要接管远程转发的 Claude，可改成 `"modelPattern": "^(?:[^/]+/)*claude/"`，或删掉该字段使用新默认值。网页下拉、请求扩展和缓存过期预警都使用同一条规则；未发送消息的新对话也可以先选择缓存模式。
 
 ## 安装
 
@@ -62,7 +65,7 @@ cp cache-mode.ts ~/.pi/agent/extensions/
 cp cache-mode.example.json ~/.pi/agent/cache-mode.json   # 可选
 ```
 
-新开的对话会加载它；已经开着的对话要重启 pi-web-ui（或 pi）后才生效。
+新开的对话会加载它；已经开着的对话执行 `/reload` 或使用 Web UI 的扩展重载后生效，也可以重启 pi-web-ui（或 pi）。只刷新浏览器或重载 `cache-rain` 网页插件，不会替换当前会话已加载的 pi 扩展。
 
 ## 测试
 
@@ -71,6 +74,14 @@ cp cache-mode.example.json ~/.pi/agent/cache-mode.json   # 可选
 ```sh
 node --test plugins/cache-mode/tests/idle.test.mjs plugins/cache-rain/tests/server.test.mjs
 ```
+
+实际 SDK 集成测试会创建隔离的配置和会话，把请求发往本地模拟 Anthropic 服务，验证真实的模型 API 分派、扩展事件顺序、请求头、TTL 和状态落盘，不调用远程模型。指定已安装 SDK 的入口后运行：
+
+```sh
+PI_CACHE_MODE_SDK=/path/to/pi-coding-agent/dist/index.js node --test plugins/cache-mode/tests/sdk.test.mjs
+```
+
+未指定 `PI_CACHE_MODE_SDK` 时，该集成测试会明确跳过。
 
 ## 已知限制
 

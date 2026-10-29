@@ -1,6 +1,6 @@
 {
   "mode": "daily",
   "provider": "magpie",
-  "modelPattern": "^claude/",
+  "modelPattern": "^(?:[^/]+/)*claude/",
   "focusAutoOffMinutes": 0
 }

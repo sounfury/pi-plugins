@@ -19,7 +19,7 @@ function focusModeFor(modelId: string): boolean {
 		const m = JSON.parse(readFileSync(CACHE_MODE_PATH, "utf8"));
 		if (m?.mode !== "focus") return false;
 		const [provider, ...rest] = modelId.split("/");
-		return provider === (m.provider ?? "magpie") && new RegExp(m.modelPattern ?? "^claude/", "i").test(rest.join("/"));
+		return provider === (m.provider ?? "magpie") && new RegExp(m.modelPattern ?? "^(?:[^/]+/)*claude/", "i").test(rest.join("/"));
 	} catch { return false; }
 }
 const HANDOFF_DIR = ".pi-handoff";
