@@ -12,7 +12,7 @@
      · 书库羊皮纸 #fff8f4             → 卡片与代码底
    装饰：背景魔法阵水印 · 空状态缓转法阵 · 发送键「蓄力爆裂」光晕 ·
          工具运行时「咏唱」呼吸光 · 错误提示用绷带纱布纹 · 状态栏四色魔力线
-   性能：立绘羽化与混色预烘焙；火星以整层 transform/opacity 动画上升；
+   性能：立绘羽化与混色预烘焙；火星分三层以 transform/opacity 动画飘升；
          毛玻璃仅用于外层面板，工具呼吸光使用独立透明度动画。
    ========================================================================= */
 :root {
@@ -263,54 +263,86 @@ html body:not(.has-wallpaper)::after {
 }
 
 /* ---- 0.6 上升的火星与金色魔力粒子 ----
-   渐变只绘制一次，整层移动并闪烁；循环边界淡出，避免 background-position
-   动画逐帧重绘整屏。底部多留一段纹理，向上移动时不会露出空白。 */
-#root::after {
+   三层各自斜向飘升、闪烁，周期错开，任何时刻都不会整屏一起消失。
+   渐变只绘制一次，动画只改 transform/opacity，不逐帧重绘；每层在循环边界
+   淡出，循环时不会跳变。底部多留一段纹理，上升时不露空白。 */
+#root::after,
+html::before,
+html::after {
 	content: "";
 	position: fixed;
 	z-index: 0;
 	left: calc(var(--megu-art-left) - 4vw);
-	--megu-ember-travel: 230px;
-	bottom: calc(-1 * var(--megu-ember-travel));
+	bottom: calc(-1 * var(--megu-ember-y));
 	width: calc(var(--megu-art-w) + 8vw);
-	height: calc(100vh + var(--megu-ember-travel));
-	background-image:
-		radial-gradient(circle at 20% 70%, rgba(255, 150, 70, 0.95) 0 1.8px, rgba(255, 150, 70, 0) 3px),
-		radial-gradient(circle at 70% 30%, rgba(238, 90, 47, 0.85) 0 1.4px, rgba(238, 90, 47, 0) 2.6px),
-		radial-gradient(circle at 45% 50%, rgba(217, 162, 58, 0.95) 0 1.1px, rgba(217, 162, 58, 0) 2.2px),
-		radial-gradient(circle at 80% 85%, rgba(200, 36, 58, 0.75) 0 2.4px, rgba(200, 36, 58, 0) 4px);
-	background-size: 170px 230px, 230px 310px, 110px 150px, 290px 390px;
-	-webkit-mask-image: linear-gradient(to top, #000 0%, #000 40%, transparent 90%);
-	mask-image: linear-gradient(to top, #000 0%, #000 40%, transparent 90%);
-	opacity: 0.7;
+	height: calc(100vh + var(--megu-ember-y));
+	-webkit-mask-image: linear-gradient(to top, #000 calc(var(--megu-ember-y) * 0.5 + 40vh), transparent calc(var(--megu-ember-y) * 0.5 + 90vh));
+	mask-image: linear-gradient(to top, #000 calc(var(--megu-ember-y) * 0.5 + 40vh), transparent calc(var(--megu-ember-y) * 0.5 + 90vh));
+	opacity: 0;
 	pointer-events: none;
 	will-change: transform, opacity;
-	animation: megu-embers 16s linear infinite;
+	animation: megu-embers var(--megu-ember-time) linear var(--megu-ember-delay) infinite;
+}
+
+/* 橙与绯红：向右上飘 */
+#root::after {
+	--megu-ember-x: 170px;
+	--megu-ember-y: 460px;
+	--megu-ember-time: 16s;
+	--megu-ember-delay: 0s;
+	background-image:
+		radial-gradient(circle at 20% 70%, rgba(255, 150, 70, 0.95) 0 1.8px, rgba(255, 150, 70, 0) 3px),
+		radial-gradient(circle at 80% 85%, rgba(200, 36, 58, 0.75) 0 2.4px, rgba(200, 36, 58, 0) 4px);
+	background-size: 170px 230px, 290px 390px;
+}
+
+/* 赤橙：向左上飘，较慢 */
+html::before {
+	--megu-ember-x: -190px;
+	--megu-ember-y: 260px;
+	--megu-ember-time: 13s;
+	--megu-ember-delay: -4.3s;
+	background-image: radial-gradient(circle at 70% 30%, rgba(238, 90, 47, 0.85) 0 1.4px, rgba(238, 90, 47, 0) 2.6px);
+	background-size: 230px 310px;
+}
+
+/* 金色魔力：几乎笔直上升 */
+html::after {
+	--megu-ember-x: 0px;
+	--megu-ember-y: 530px;
+	--megu-ember-time: 19s;
+	--megu-ember-delay: -12.7s;
+	background-image: radial-gradient(circle at 45% 50%, rgba(217, 162, 58, 0.95) 0 1.1px, rgba(217, 162, 58, 0) 2.2px);
+	background-size: 110px 150px;
 }
 
 @keyframes megu-embers {
 	from {
-		transform: translateY(0);
+		transform: translate3d(0, 0, 0);
 		opacity: 0;
 	}
-	8%,
-	90% {
+	6%, 28%, 49%, 70%, 92% {
 		opacity: 0.7;
 	}
-	30% {
+	13%, 34%, 56%, 77% {
 		opacity: 0.45;
 	}
-	55% {
+	21%, 42%, 63%, 84% {
 		opacity: 0.85;
 	}
 	to {
-		transform: translateY(calc(-1 * var(--megu-ember-travel)));
+		transform: translate3d(var(--megu-ember-x), calc(-1 * var(--megu-ember-y)), 0);
 		opacity: 0;
 	}
 }
 
 body.has-wallpaper #root::before,
 body.has-wallpaper #root::after {
+	display: none;
+}
+
+html:has(body.has-wallpaper)::before,
+html:has(body.has-wallpaper)::after {
 	display: none;
 }
 
@@ -360,6 +392,8 @@ body.has-wallpaper #root::after {
 	}
 
 	#root::after,
+	html::before,
+	html::after,
 	html body:not(.has-wallpaper)::before,
 	html body:not(.has-wallpaper)::after {
 		display: none;
@@ -760,6 +794,8 @@ body.has-wallpaper #root::after {
 @media (prefers-reduced-motion: reduce) {
 	#root::before,
 	#root::after,
+	html::before,
+	html::after,
 	html body:not(.has-wallpaper)::before,
 	html body:not(.has-wallpaper)::after,
 	.msg-user,
