@@ -16,14 +16,14 @@ function sameOrigin(value) {
   return url.href;
 }
 function patchElement(element) {
-  for (const name of ['href', 'src', 'action', 'poster', 'component-url', 'renderer-url']) {
+  for (const name of ['href', 'src', 'action', 'poster', 'component-url', 'renderer-url', 'before-hydration-url']) {
     const value = element.getAttribute(name);
     if (value && scoped(value) !== value) element.setAttribute(name, scoped(value));
   }
 }
 function patchTree(root) {
   if (root instanceof Element) patchElement(root);
-  root.querySelectorAll?.('[href],[src],[action],[poster],[component-url],[renderer-url]').forEach(patchElement);
+  root.querySelectorAll?.('[href],[src],[action],[poster],[component-url],[renderer-url],[before-hydration-url]').forEach(patchElement);
 }
 function rewriteWrittenHtml(html) {
   return String(html).replace(
@@ -39,7 +39,7 @@ for (const method of ['write', 'writeln']) {
 }
 // Prefix before browser resource loading, including document.write and framework
 // code setting a URL while an element is detached from the DOM.
-const urlAttributes = new Set(['href', 'src', 'action', 'poster', 'component-url', 'renderer-url']);
+const urlAttributes = new Set(['href', 'src', 'action', 'poster', 'component-url', 'renderer-url', 'before-hydration-url']);
 const nativeSetAttribute = Element.prototype.setAttribute;
 Element.prototype.setAttribute = function(name, value) {
   return nativeSetAttribute.call(this, name, urlAttributes.has(String(name).toLowerCase()) ? scoped(String(value)) : value);
@@ -66,7 +66,7 @@ new MutationObserver(records => {
   }
 }).observe(document.documentElement, {
   subtree: true, childList: true, attributes: true,
-  attributeFilter: ['href', 'src', 'action', 'poster', 'component-url', 'renderer-url'],
+  attributeFilter: ['href', 'src', 'action', 'poster', 'component-url', 'renderer-url', 'before-hydration-url'],
 });
 // Click handling also covers anchors created and clicked synchronously by an app.
 document.addEventListener('click', event => {

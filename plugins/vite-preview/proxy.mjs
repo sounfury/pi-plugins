@@ -22,7 +22,7 @@ export function rewriteCss(source) {
 }
 export function rewriteHtml(html) {
   const rewritten = html.replace(
-    /(\b(?:href|src|action|poster|component-url|renderer-url)\s*=\s*)(["'])(\/[^"']*)\2/gi,
+    /(\b(?:href|src|action|poster|component-url|renderer-url|before-hydration-url)\s*=\s*)(["'])(\/[^"']*)\2/gi,
     (_, attribute, quote, url) => `${attribute}${quote}${prefixUrl(url)}${quote}`,
   ).replace(/(<script\b[^>]*>)([\s\S]*?)(<\/script>)/gi,
     (_, opening, code, closing) => opening + rewriteJs(code) + closing);
